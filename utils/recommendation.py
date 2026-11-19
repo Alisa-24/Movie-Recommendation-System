@@ -151,6 +151,24 @@ def generate_recommendations(user_id, model, top_n=10):
     return recommendations[columns].reset_index(drop=True)
 
 
+def get_user_test_predictions(user_id, test, svd, pmf):
+    """Score the user's held-out ratings for movies known to both models."""
+
+    user_test = test.loc[test["UserID"].eq(user_id), ["UserID", "MovieID", "Rating"]]
+    predictions = user_test.loc[
+        user_test["MovieID"].isin(svd.movie_ids)
+        & user_test["MovieID"].isin(pmf.movie_ids)
+    ].copy()
+
+    svd_user_idx = svd.user_ids.get_loc(user_id)
+    movie_idx = svd.movie_ids.get_indexer(predictions["MovieID"])
+    predictions["SVD"] = svd.predictions[svd_user_idx, movie_idx]
+    predictions["PMF"] = pmf.predict_many(
+        predictions["UserID"], predictions["MovieID"]
+    )
+    return predictions
+
+
 def _shorten_title(title, max_length=30):
     """Shorten movie titles for plots."""
 
@@ -174,42 +192,17 @@ def plot_user_comparison(user_id, svd, pmf, top_n=10):
         random_state=42
     )
 
-    # Select test ratings for this user
-    user_test = test[
-        test["UserID"] == user_id
-    ].copy()
-
-    # Keep movies known to both models
-    user_test = user_test[
-        user_test["MovieID"].isin(svd.movie_ids)
-        & user_test["MovieID"].isin(pmf.movie_ids)
-    ]
-
     if user_id not in svd.user_ids or user_id not in pmf.user_ids:
         print(f"User {user_id} is unknown to one of the models.")
         return
 
+    user_test = get_user_test_predictions(user_id, test, svd, pmf)
     if user_test.empty:
         print(f"No test ratings found for user {user_id}.")
         return
-    
-    # Evaluate all test ratings for this user
-    all_movie_ids = user_test["MovieID"].to_numpy()
-    actual_all = user_test["Rating"].to_numpy()
 
-    # Evaluate predictions for all test movies
-    svd_user_idx = svd.user_ids.get_loc(user_id)
-    svd_movie_idx = svd.movie_ids.get_indexer(all_movie_ids)
-
-    svd_all = svd.predictions[svd_user_idx, svd_movie_idx]
-
-    pmf_all = pmf.predict_many(
-        np.full(len(all_movie_ids), user_id),
-        all_movie_ids
-    )
-
-    svd_rmse = np.sqrt(np.mean((actual_all - svd_all) ** 2))
-    pmf_rmse = np.sqrt(np.mean((actual_all - pmf_all) ** 2))
+    svd_rmse = np.sqrt(np.mean((user_test["Rating"] - user_test["SVD"]) ** 2))
+    pmf_rmse = np.sqrt(np.mean((user_test["Rating"] - user_test["PMF"]) ** 2))
 
     print(f"User {user_id} SVD RMSE: {svd_rmse:.4f}")
     print(f"User {user_id} PMF RMSE: {pmf_rmse:.4f}")
@@ -227,43 +220,24 @@ def plot_user_comparison(user_id, svd, pmf, top_n=10):
         how="left"
     )
 
-    movie_ids = user_test["MovieID"].to_numpy()
-
-    # Actual ratings
-    actual = user_test["Rating"].to_numpy()
-
-    # SVD predictions
-    user_idx = svd.user_ids.get_loc(user_id)
-    movie_idx = svd.movie_ids.get_indexer(movie_ids)
-
-    svd_preds = svd.predictions[
-        user_idx, movie_idx
-    ]
-
-    # PMF predictions
-    pmf_preds = pmf.predict_many(
-        np.full(len(movie_ids), user_id),
-        movie_ids
-    )
-
     # Plot actual vs predicted ratings
-    x = np.arange(len(movie_ids))
+    x = np.arange(len(user_test))
     width = 0.25
 
     fig, ax = plt.subplots(figsize=(14, 7))
 
     ax.bar(
-        x - width, actual, width,
+        x - width, user_test["Rating"], width,
         label="Actual"
     )
 
     ax.bar(
-        x, svd_preds, width,
+        x, user_test["SVD"], width,
         label="SVD"
     )
 
     ax.bar(
-        x + width, pmf_preds, width,
+        x + width, user_test["PMF"], width,
         label="PMF"
     )
 
