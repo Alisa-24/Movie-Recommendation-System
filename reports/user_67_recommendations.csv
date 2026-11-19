@@ -1,0 +1,21 @@
+UserID,Model,MovieID,Title,Genres,PredictedRating
+67,SVD,3175,Galaxy Quest (1999),Adventure|Comedy|Sci-Fi,4.436
+67,SVD,296,Pulp Fiction (1994),Crime|Drama,4.435
+67,SVD,34,Babe (1995),Children's|Comedy|Drama,4.421
+67,SVD,527,Schindler's List (1993),Drama|War,4.415
+67,SVD,1573,Face/Off (1997),Action|Sci-Fi|Thriller,4.394
+67,SVD,50,"Usual Suspects, The (1995)",Crime|Thriller,4.393
+67,SVD,1676,Starship Troopers (1997),Action|Adventure|Sci-Fi|War,4.36
+67,SVD,2701,Wild Wild West (1999),Action|Sci-Fi|Western,4.357
+67,SVD,1148,"Wrong Trousers, The (1993)",Animation|Comedy,4.347
+67,SVD,953,It's a Wonderful Life (1946),Drama,4.344
+67,PMF,3022,"General, The (1927)",Comedy,4.997
+67,PMF,1148,"Wrong Trousers, The (1993)",Animation|Comedy,4.978
+67,PMF,2503,"Apple, The (Sib) (1998)",Drama,4.967
+67,PMF,745,"Close Shave, A (1995)",Animation|Comedy|Thriller,4.957
+67,PMF,720,Wallace & Gromit: The Best of Aardman Animation (1996),Animation,4.85
+67,PMF,2208,"Lady Vanishes, The (1938)",Comedy|Mystery|Romance|Thriller,4.846
+67,PMF,910,Some Like It Hot (1959),Comedy|Crime,4.845
+67,PMF,2905,Sanjuro (1962),Action|Adventure,4.837
+67,PMF,53,Lamerica (1994),Drama,4.833
+67,PMF,3030,Yojimbo (1961),Comedy|Drama|Western,4.832

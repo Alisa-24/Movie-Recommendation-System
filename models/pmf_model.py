@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from numba import njit
+from sklearn.model_selection import train_test_split
 
 from utils.matrix_creation import create_user_item_matrix
 
@@ -61,7 +62,7 @@ def _training_mse(
     user_idx, movie_idx, ratings,
     U, V, user_bias, movie_bias, global_mean
 ):
-    """Calculate training MSE using observed ratings only."""
+    """Calculate MSE on observed ratings with predictions clipped to 1–5."""
 
     squared_error = 0.0
     k = U.shape[1]
@@ -75,6 +76,7 @@ def _training_mse(
         for f in range(k):
             prediction += U[u, f] * V[m, f]
 
+        prediction = min(max(prediction, 1.0), 5.0)
         error = ratings[t] - prediction
         squared_error += error ** 2
 
@@ -106,12 +108,19 @@ class PMFModel:
         self.global_mean = None
 
         self.history = []
+        self.validation_rmse_history = []
+        self.best_epoch = None
 
-    def fit(self, train):
-        """Train PMF using observed user-movie ratings."""
+    def fit(self, train, validation=None, *, patience=10):
+        """Train PMF and restore the best checkpoint when given validation ratings."""
 
         if train.empty:
             raise ValueError("Training dataset is empty.")
+        if validation is not None:
+            if validation.empty:
+                raise ValueError("Validation dataset is empty.")
+            if self.epochs < 1 or patience < 1:
+                raise ValueError("Early stopping requires positive epochs and patience.")
 
         # Create user/movie ID mappings
         self.user_ids = pd.Index(
@@ -154,6 +163,10 @@ class PMFModel:
         )
 
         self.history = []
+        self.validation_rmse_history = []
+        self.best_epoch = None
+        best_validation_rmse = np.inf
+        best_checkpoint = None
 
         # Train using SGD
         for epoch in range(1, self.epochs + 1):
@@ -179,15 +192,41 @@ class PMFModel:
 
             self.history.append(mse)
 
-            print(
+            progress = (
                 f"Epoch {epoch:02d}/{self.epochs} "
-                f"| Training MSE: {mse:.4f}"
+                f"| Training RMSE: {np.sqrt(mse):.4f}"
+            )
+            if validation is not None:
+                validation_rmse = self.evaluate(validation)["PMF_RMSE"]
+                self.validation_rmse_history.append(validation_rmse)
+                progress += f" | Validation RMSE: {validation_rmse:.4f}"
+
+                if validation_rmse < best_validation_rmse:
+                    best_validation_rmse = validation_rmse
+                    self.best_epoch = epoch
+                    best_checkpoint = (
+                        self.U.copy(), self.V.copy(),
+                        self.user_bias.copy(), self.movie_bias.copy()
+                    )
+
+            print(progress)
+            if validation is not None and epoch - (self.best_epoch or 0) >= patience:
+                print(f"Early stopping at epoch {epoch}.")
+                break
+
+        if validation is not None:
+            if best_checkpoint is None:
+                raise ValueError("No finite validation RMSE was recorded.")
+            self.U, self.V, self.user_bias, self.movie_bias = best_checkpoint
+            print(
+                f"Restored epoch {self.best_epoch} "
+                f"| Validation RMSE: {best_validation_rmse:.4f}"
             )
 
         return self
 
-    def predict_many(self, user_ids, movie_ids):
-        """Predict ratings for multiple user-movie pairs."""
+    def predict_many(self, user_ids, movie_ids, *, clip=True):
+        """Predict multiple ratings, with raw scores available for ranking."""
 
         if self.U is None:
             raise ValueError("Model has not been trained.")
@@ -219,7 +258,7 @@ class PMFModel:
             self.V[movie_idx[known_pairs]]
         )
 
-        return np.clip(predicted, 1, 5)
+        return np.clip(predicted, 1, 5) if clip else predicted
 
     def predict(self, user_id, movie_id):
         """Predict a single user-movie rating."""
@@ -229,7 +268,7 @@ class PMFModel:
         )
 
     def evaluate(self, test):
-        """Evaluate PMF using test-set MSE and RMSE."""
+        """Evaluate held-out ratings using MSE and RMSE."""
 
         if test.empty:
             raise ValueError("Test dataset is empty.")
@@ -250,11 +289,13 @@ class PMFModel:
             "PMF_RMSE": rmse
         }
 
-    def save(self, metrics=None):
-        """Save latent factors, convergence plot and metrics."""
+    def save(self, metrics=None, *, validation_run=None):
+        """Save factors and metrics, with the convergence trace used to select an epoch."""
 
         if self.U is None:
             raise ValueError("Model has not been trained.")
+
+        convergence = self if validation_run is None else validation_run
 
         factors_dir = REPORTS_DIR / "pmf_factors"
         factors_dir.mkdir(parents=True, exist_ok=True)
@@ -277,30 +318,52 @@ class PMFModel:
             "learning_rate": self.learning_rate,
             "reg": self.reg,
             "epochs": self.epochs,
+            "epochs_trained": len(self.history),
             "random_state": self.random_state,
             "global_mean": self.global_mean
         }
+        if convergence.best_epoch is not None:
+            metadata["best_epoch"] = convergence.best_epoch
+            metadata["best_validation_rmse"] = (
+                convergence.validation_rmse_history[convergence.best_epoch - 1]
+            )
+            metadata["validation_epochs_trained"] = len(convergence.history)
 
         with open(factors_dir / "metadata.json", "w") as f:
             json.dump(metadata, f, indent=4)
 
         # Plot convergence
-        plt.figure(figsize=(8, 5))
-        plt.plot(
-            range(1, len(self.history) + 1),
-            self.history,
-            marker="o"
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.plot(
+            range(1, len(convergence.history) + 1),
+            np.sqrt(convergence.history),
+            marker="o",
+            label="Training"
         )
-        plt.xlabel("Epoch")
-        plt.ylabel("Training MSE")
-        plt.title("PMF Training Convergence")
-        plt.grid(alpha=0.3)
-        plt.tight_layout()
-        plt.savefig(
+        if convergence.best_epoch is not None:
+            ax.plot(
+                range(1, len(convergence.validation_rmse_history) + 1),
+                convergence.validation_rmse_history,
+                marker="o",
+                label="Validation"
+            )
+            ax.axvline(
+                convergence.best_epoch, linestyle="--",
+                color="gray", label="Selected epoch"
+            )
+            ax.legend()
+            ax.set_title("PMF Validation Run")
+        else:
+            ax.set_title("PMF Training Convergence")
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel("RMSE")
+        ax.grid(alpha=0.3)
+        fig.tight_layout()
+        fig.savefig(
             REPORTS_DIR / "pmf_convergence.png",
             dpi=150
         )
-        plt.close()
+        plt.close(fig)
 
         # Preserve existing SVD metrics
         if metrics is not None:
@@ -327,18 +390,16 @@ class PMFModel:
 
 
 if __name__ == "__main__":
-    # Reuse the exact same train/test split as SVD
+    # Reserve validation ratings from training and keep the shared SVD test split.
     train, test, _, _ = create_user_item_matrix()
+    fit_rows, validation = train_test_split(train, test_size=0.1, random_state=42)
 
-    model = PMFModel(
-        k=50,
-        learning_rate=0.01,
-        reg=0.05,
-        epochs=25,
-        random_state=42
-    )
+    validation_run = PMFModel(epochs=45)
+    print("Selecting the PMF training epoch...")
+    validation_run.fit(fit_rows, validation)
 
-    print("Training PMF...")
+    print(f"Refitting PMF on all training ratings for {validation_run.best_epoch} epochs...")
+    model = PMFModel(epochs=validation_run.best_epoch)
     model.fit(train)
 
     metrics = model.evaluate(test)
@@ -346,6 +407,6 @@ if __name__ == "__main__":
     print(f"PMF MSE: {metrics['PMF_MSE']:.4f}")
     print(f"PMF RMSE: {metrics['PMF_RMSE']:.4f}")
 
-    model.save(metrics)
+    model.save(metrics, validation_run=validation_run)
 
     print("PMF model completed successfully.")

@@ -1,0 +1,21 @@
+UserID,Model,MovieID,Title,Genres,PredictedRating
+1,SVD,110,Braveheart (1995),Action|Drama|War,4.286
+1,SVD,590,Dances with Wolves (1990),Adventure|Drama|Western,4.261
+1,SVD,1250,"Bridge on the River Kwai, The (1957)",Drama|War,4.252
+1,SVD,2012,Back to the Future Part III (1990),Comedy|Sci-Fi|Western,4.251
+1,SVD,2710,"Blair Witch Project, The (1999)",Horror,4.25
+1,SVD,2011,Back to the Future Part II (1989),Comedy|Sci-Fi,4.243
+1,SVD,2959,Fight Club (1999),Drama,4.238
+1,SVD,2628,Star Wars: Episode I - The Phantom Menace (1999),Action|Adventure|Fantasy|Sci-Fi,4.237
+1,SVD,2324,Life Is Beautiful (La Vita è bella) (1997),Comedy|Drama,4.235
+1,SVD,2640,Superman (1978),Action|Adventure|Sci-Fi,4.233
+1,PMF,2503,"Apple, The (Sib) (1998)",Drama,4.868
+1,PMF,318,"Shawshank Redemption, The (1994)",Drama,4.778
+1,PMF,2905,Sanjuro (1962),Action|Adventure,4.649
+1,PMF,953,It's a Wonderful Life (1946),Drama,4.613
+1,PMF,593,"Silence of the Lambs, The (1991)",Drama|Thriller,4.61
+1,PMF,3147,"Green Mile, The (1999)",Drama|Thriller,4.595
+1,PMF,53,Lamerica (1994),Drama,4.59
+1,PMF,1203,12 Angry Men (1957),Drama,4.581
+1,PMF,1358,Sling Blade (1996),Drama|Thriller,4.581
+1,PMF,904,Rear Window (1954),Mystery|Thriller,4.573

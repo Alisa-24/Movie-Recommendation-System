@@ -2,7 +2,11 @@
     "k": 50,
     "learning_rate": 0.01,
     "reg": 0.05,
-    "epochs": 25,
+    "epochs": 23,
+    "epochs_trained": 23,
     "random_state": 42,
-    "global_mean": 3.5819573402404785
+    "global_mean": 3.5819573402404785,
+    "best_epoch": 23,
+    "best_validation_rmse": 0.8605664057513128,
+    "validation_epochs_trained": 33
 }
