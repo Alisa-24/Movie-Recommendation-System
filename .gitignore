@@ -1,0 +1,7 @@
+data/
+reports/*.npy
+reports/pmf_factors/*.npy
+processed/*.csv
+__pycache__/
+.ipynb_checkpoints/
+.venv

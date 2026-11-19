@@ -1,0 +1,8 @@
+{
+    "k": 50,
+    "learning_rate": 0.01,
+    "reg": 0.05,
+    "epochs": 25,
+    "random_state": 42,
+    "global_mean": 3.5819573402404785
+}
