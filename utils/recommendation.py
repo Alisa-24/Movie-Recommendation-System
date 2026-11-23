@@ -1,4 +1,3 @@
-
 import argparse
 import json
 from functools import lru_cache
@@ -7,11 +6,12 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
 
-from models.svd_model import SVDModel
 from models.pmf_model import PMFModel
+from models.svd_model import SVDModel
 from utils.data_loader import load_data
+from utils.matrix_creation import split_ratings
+from utils.model_evaluation import plot_predicted_vs_actual, plot_rmse_comparison
 
 
 REPORTS_DIR = Path(__file__).resolve().parent.parent / "reports"
@@ -151,22 +151,43 @@ def generate_recommendations(user_id, model, top_n=10):
     return recommendations[columns].reset_index(drop=True)
 
 
-def get_user_test_predictions(user_id, test, svd, pmf):
-    """Score the user's held-out ratings for movies known to both models."""
-
-    user_test = test.loc[test["UserID"].eq(user_id), ["UserID", "MovieID", "Rating"]]
-    predictions = user_test.loc[
-        user_test["MovieID"].isin(svd.movie_ids)
-        & user_test["MovieID"].isin(pmf.movie_ids)
+def get_test_predictions(test, svd, pmf):
+    """Score held-out user-movie pairs known to both models."""
+    predictions = test.loc[
+        test["UserID"].isin(svd.user_ids)
+        & test["UserID"].isin(pmf.user_ids)
+        & test["MovieID"].isin(svd.movie_ids)
+        & test["MovieID"].isin(pmf.movie_ids),
+        ["UserID", "MovieID", "Rating"],
     ].copy()
 
-    svd_user_idx = svd.user_ids.get_loc(user_id)
+    user_idx = svd.user_ids.get_indexer(predictions["UserID"])
     movie_idx = svd.movie_ids.get_indexer(predictions["MovieID"])
-    predictions["SVD"] = svd.predictions[svd_user_idx, movie_idx]
+    predictions["SVD"] = svd.predictions[user_idx, movie_idx]
     predictions["PMF"] = pmf.predict_many(
         predictions["UserID"], predictions["MovieID"]
     )
     return predictions
+
+
+def get_user_test_predictions(user_id, test, svd, pmf):
+    """Score the user's held-out ratings for movies known to both models."""
+    return get_test_predictions(test.loc[test["UserID"].eq(user_id)], svd, pmf)
+
+
+def save_model_comparison(test, svd, pmf):
+    """Export aggregate evaluation figures for the saved models."""
+    with (REPORTS_DIR / "model_metrics.json").open(encoding="utf-8") as file:
+        metrics = json.load(file)
+
+    sample = test.sample(n=min(2_000, len(test)), random_state=42)
+    predictions = get_test_predictions(sample, svd, pmf)
+    for filename, figure in (
+        ("rmse_comparison.png", plot_rmse_comparison(metrics)),
+        ("predicted_vs_actual.png", plot_predicted_vs_actual(predictions)),
+    ):
+        figure.savefig(REPORTS_DIR / filename, dpi=150)
+        plt.close(figure)
 
 
 def _shorten_title(title, max_length=30):
@@ -180,17 +201,13 @@ def _shorten_title(title, max_length=30):
     return title[:max_length - 3] + "..."
 
 
-def plot_user_comparison(user_id, svd, pmf, top_n=10):
+def plot_user_comparison(user_id, svd, pmf, top_n=10, *, test=None):
     """Compare actual, SVD and PMF ratings on held-out test movies."""
 
     ratings, movies = get_movie_data()
 
-    # Reproduce the same train/test split
-    _, test = train_test_split(
-        ratings,
-        test_size=0.2,
-        random_state=42
-    )
+    if test is None:
+        _, test = split_ratings(ratings)
 
     if user_id not in svd.user_ids or user_id not in pmf.user_ids:
         print(f"User {user_id} is unknown to one of the models.")
@@ -289,23 +306,14 @@ def plot_top_recommendations(user_id, svd_recs, pmf_recs):
 
     for ax, (model_name, recommendations) in zip(axes, models):
 
-        plot_data = recommendations.sort_values(
-            "PredictedRating",
-            ascending=True
-        )
-
-        labels = [
-            _shorten_title(title)
-            for title in plot_data["Title"]
-        ]
-
-        ax.barh(
-            labels,
-            plot_data["PredictedRating"]
-        )
+        positions = np.arange(len(recommendations))
+        ax.barh(positions, recommendations["PredictedRating"])
+        labels = [_shorten_title(title) for title in recommendations["Title"]]
+        ax.set_yticks(positions, labels)
+        ax.invert_yaxis()
 
         ax.set_title(
-            f"Top {len(plot_data)} {model_name} "
+            f"Top {len(recommendations)} {model_name} "
             f"Recommendations - User {user_id}"
         )
 
@@ -324,7 +332,7 @@ def plot_top_recommendations(user_id, svd_recs, pmf_recs):
     plt.close(fig)
 
 
-def compare_recommendations(user_id, svd, pmf, top_n=10):
+def compare_recommendations(user_id, svd, pmf, top_n=10, *, test=None):
     """Generate, compare and save recommendations."""
 
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -352,7 +360,7 @@ def compare_recommendations(user_id, svd, pmf, top_n=10):
 
     # Plot actual vs predicted ratings
     plot_user_comparison(
-        user_id, svd, pmf, top_n
+        user_id, svd, pmf, top_n, test=test
     )
 
     # Plot top recommendations
@@ -381,16 +389,25 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    if args.top_n < 1:
+        parser.error("--top-n must be greater than zero.")
+
     # Load trained models
     svd, pmf = load_saved_models()
 
-    # Generate and compare
+    if args.user_id not in svd.user_ids or args.user_id not in pmf.user_ids:
+        parser.error(f"User {args.user_id} was not found in both trained models.")
+
+    ratings, _ = get_movie_data()
+    _, test = split_ratings(ratings)
     svd_recs, pmf_recs = compare_recommendations(
         args.user_id,
         svd,
         pmf,
-        args.top_n
+        args.top_n,
+        test=test,
     )
+    save_model_comparison(test, svd, pmf)
 
     print(f"\nTop {args.top_n} SVD Recommendations:")
     print(svd_recs.to_string(index=False))

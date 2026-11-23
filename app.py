@@ -4,10 +4,11 @@ import altair as alt
 import numpy as np
 import pandas as pd
 import streamlit as st
-from sklearn.model_selection import train_test_split
 
 from utils.data_loader import DATA_DIR
+from utils.matrix_creation import split_ratings
 from utils.recommendation import (
+    REPORTS_DIR,
     generate_recommendations,
     get_movie_data,
     get_user_test_predictions,
@@ -17,6 +18,7 @@ from utils.recommendation import (
 
 PROJECT_DIR = Path(__file__).resolve().parent
 TRAIN_COMMANDS = "python -m models.svd_model\npython -m models.pmf_model"
+REPORT_COMMAND = "python -m utils.recommendation --user-id 1"
 RATING_SERIES = ["Actual", "SVD", "PMF"]
 
 
@@ -24,7 +26,7 @@ RATING_SERIES = ["Actual", "SVD", "PMF"]
 def load_dashboard_data():
     ratings, movies = get_movie_data()
     svd, pmf = load_saved_models()
-    _, test = train_test_split(ratings, test_size=0.2, random_state=42)
+    _, test = split_ratings(ratings)
     movies = movies.set_index("MovieID")
     return ratings, movies, test, svd, pmf
 
@@ -90,6 +92,22 @@ def show_comparison(predictions, titles):
     )
 
 
+def show_model_reports():
+    """Show the convergence and aggregate test charts from the training run."""
+    for filename in (
+        "pmf_convergence.png",
+        "rmse_comparison.png",
+        "predicted_vs_actual.png",
+    ):
+        path = REPORTS_DIR / filename
+        if path.is_file():
+            st.image(str(path))
+        else:
+            st.info(f"Missing report: {filename}. Train both models and export the reports.")
+            st.code(f"{TRAIN_COMMANDS}\n{REPORT_COMMAND}", language="bash")
+            break
+
+
 def main():
     st.set_page_config(page_title="MovieLens Recommender", page_icon="🎬", layout="wide")
     st.html(
@@ -134,7 +152,7 @@ def main():
             st.markdown("Train both models from the project folder, then rerun the dashboard.")
             st.code(TRAIN_COMMANDS, language="bash")
         st.stop()
-    except (OSError, ValueError, KeyError):
+    except (OSError, EOFError, ValueError, KeyError):
         st.error("The dataset or trained model files could not be read. Check the data and retrain both models.")
         st.stop()
 
@@ -144,8 +162,20 @@ def main():
         st.stop()
 
     user_control, count_control = st.columns([3, 1], gap="large")
-    user_id = user_control.selectbox("User ID", user_ids, help="Type an ID to search the list.")
+    user_input = user_control.text_input(
+        "User ID", value=str(user_ids[0]), help="Enter a MovieLens user ID."
+    )
     top_n = count_control.number_input("Movies per list", min_value=1, max_value=25, value=10, step=1)
+
+    try:
+        user_id = int(user_input)
+    except ValueError:
+        st.error("Enter a whole-number MovieLens user ID.")
+        st.stop()
+
+    if user_id not in user_ids:
+        st.error(f"User ID {user_id} was not found. Try {user_ids[0]}.")
+        st.stop()
 
     user_ratings = ratings.loc[ratings["UserID"].eq(user_id)]
     tables = {
@@ -159,8 +189,8 @@ def main():
     average.metric("Average rating", mean_rating, border=True)
     shared.metric("Shared recommendations", len(shared_picks), border=True)
 
-    recommendations_tab, comparison_tab, favorites_tab = st.tabs(
-        ["Recommendations", "Held-out comparison", "Top-rated movies"]
+    recommendations_tab, comparison_tab, favorites_tab, reports_tab = st.tabs(
+        ["Recommendations", "Held-out comparison", "Top-rated movies", "Model reports"]
     )
     with recommendations_tab:
         for column, (model_name, recommendations) in zip(st.columns(2, gap="large"), tables.items()):
@@ -193,6 +223,9 @@ def main():
                 .join(movies[["Title", "Genres"]], on="MovieID")
             )
             show_movie_table(favorites, "Rating", "User rating")
+
+    with reports_tab:
+        show_model_reports()
 
 
 if __name__ == "__main__":

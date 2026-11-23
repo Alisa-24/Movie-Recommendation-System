@@ -1,11 +1,17 @@
 
-import pandas as pd
 from pathlib import Path
+
 from sklearn.model_selection import train_test_split
+
 from utils.data_loader import load_data
 
 
 PROCESSED_DIR = Path(__file__).resolve().parent.parent / "processed"
+
+
+def split_ratings(ratings, *, test_size=0.2, random_state=42):
+    """Split cleaned ratings for training and held-out evaluation."""
+    return train_test_split(ratings, test_size=test_size, random_state=random_state)
 
 
 def normalize_matrix(matrix):
@@ -26,14 +32,10 @@ def normalize_matrix(matrix):
 def create_user_item_matrix():
     """Split ratings and create the normalized user-item matrix."""
 
-    ratings, movies, users = load_data()
+    ratings, _, _ = load_data()
 
     # Split into training and testing sets
-    train, test = train_test_split(
-        ratings,
-        test_size=0.2,
-        random_state=42
-    )
+    train, test = split_ratings(ratings)
 
     # Create user-item matrix from training data only
     matrix = train.pivot(

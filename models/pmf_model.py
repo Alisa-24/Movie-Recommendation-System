@@ -1,4 +1,3 @@
-
 import json
 from pathlib import Path
 
@@ -289,6 +288,27 @@ class PMFModel:
             "PMF_RMSE": rmse
         }
 
+    def plot_convergence(self):
+        """Plot training MSE and, when available, validation MSE by epoch."""
+        figure, ax = plt.subplots(figsize=(8, 5), layout="constrained")
+        epochs = range(1, len(self.history) + 1)
+        ax.plot(epochs, self.history, marker="o", label="Training")
+        if self.best_epoch is not None:
+            ax.plot(
+                epochs,
+                np.square(self.validation_rmse_history),
+                marker="o",
+                label="Validation",
+            )
+            ax.axvline(
+                self.best_epoch, linestyle="--", color="gray", label="Selected epoch"
+            )
+
+        ax.set(title="PMF convergence", xlabel="Epoch", ylabel="MSE")
+        ax.grid(alpha=0.3)
+        ax.legend()
+        return figure
+
     def save(self, metrics=None, *, validation_run=None):
         """Save factors and metrics, with the convergence trace used to select an epoch."""
 
@@ -332,37 +352,8 @@ class PMFModel:
         with open(factors_dir / "metadata.json", "w") as f:
             json.dump(metadata, f, indent=4)
 
-        # Plot convergence
-        fig, ax = plt.subplots(figsize=(8, 5))
-        ax.plot(
-            range(1, len(convergence.history) + 1),
-            np.sqrt(convergence.history),
-            marker="o",
-            label="Training"
-        )
-        if convergence.best_epoch is not None:
-            ax.plot(
-                range(1, len(convergence.validation_rmse_history) + 1),
-                convergence.validation_rmse_history,
-                marker="o",
-                label="Validation"
-            )
-            ax.axvline(
-                convergence.best_epoch, linestyle="--",
-                color="gray", label="Selected epoch"
-            )
-            ax.legend()
-            ax.set_title("PMF Validation Run")
-        else:
-            ax.set_title("PMF Training Convergence")
-        ax.set_xlabel("Epoch")
-        ax.set_ylabel("RMSE")
-        ax.grid(alpha=0.3)
-        fig.tight_layout()
-        fig.savefig(
-            REPORTS_DIR / "pmf_convergence.png",
-            dpi=150
-        )
+        fig = convergence.plot_convergence()
+        fig.savefig(REPORTS_DIR / "pmf_convergence.png", dpi=150)
         plt.close(fig)
 
         # Preserve existing SVD metrics
